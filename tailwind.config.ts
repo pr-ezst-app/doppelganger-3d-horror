@@ -20,10 +20,9 @@ export default {
 		},
 		extend: {
 			fontFamily: {
-				gothic: ['UnifrakturMaguntia', 'cursive'],
-				cinzel: ['Cinzel', 'serif'],
-				fell: ['IM Fell English', 'serif'],
-				crimson: ['Crimson Text', 'serif'],
+				display: ['Bebas Neue', 'sans-serif'],
+				body: ['Barlow Condensed', 'sans-serif'],
+				mono: ['Share Tech Mono', 'monospace'],
 			},
 			colors: {
 				border: 'hsl(var(--border))',
