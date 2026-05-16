@@ -1,501 +1,620 @@
-import { useState, useEffect, useCallback } from 'react';
-import Icon from '@/components/ui/icon';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Box, Plane, Cylinder, Sphere, Text } from '@react-three/drei';
+import * as THREE from 'three';
 
-type Screen = 'menu' | 'play' | 'inventory' | 'game-over' | 'win';
+// ─── Types ───────────────────────────────────────────────────────────────────
+type Screen = 'menu' | 'cutscene' | 'school' | 'end';
 
-interface Item {
-  id: string;
-  name: string;
-  emoji: string;
-  desc: string;
-  qty: number;
+interface DialogueLine {
+  speaker: string;
+  text: string;
+  color?: string;
 }
 
-interface State {
-  hp: number;
-  sanity: number;
-  stamina: number;
-  scene: number;
-  items: Item[];
-  log: string[];
-  tension: number;
-}
-
-const BG = 'https://cdn.ezst.app/projects/9a837e52-f853-48ca-9649-61f562b1f681/files/dd98fe4e-73f1-41fe-a87d-c5a116511df3.jpg';
-
-const SCENES = [
-  {
-    loc: 'Parking Structure — Level B2',
-    time: '11:47 PM',
-    text: `You squeeze through the gap in the chain-link fence. The parking structure is black except for one broken fluorescent that strobes on the second level. Your phone flashlight cuts a narrow cone through the dark. Spray paint on the concrete: THEY KNOW. Under it, in different handwriting, in red — your name.`,
-    choices: ['Keep moving. Whoever wrote that is long gone.', 'Take a photo. Document everything.', 'Turn back. This isn\'t worth it.'],
-  },
-  {
-    loc: 'Stairwell — 3rd Floor',
-    time: '11:53 PM',
-    text: `The stairwell smells like mold and something burnt. Water drips somewhere above. You hear footsteps stop the moment yours do. You hold your breath. Your phone buzzes — a text from a number you don't recognize: "wrong floor." You look up. Through the grate above, two shoes. Perfectly still.`,
-    choices: ['Run down. Get out.', 'Shine your light up through the grate.', 'Text back: "who is this?"'],
-  },
-  {
-    loc: 'Office Block — Floor 6',
-    time: '12:14 AM',
-    text: `Rows of dead cubicles. Monitors crusted with dust, chairs overturned. One computer is on. The screen shows a webcam feed — this room, live, from an angle you can't locate. You watch yourself walk into frame. You stop. The figure on screen keeps walking.`,
-    choices: ['Unplug the monitor.', 'Look for the camera.', 'Don\'t move. Wait and see what it does.'],
-  },
-  {
-    loc: 'Server Room — Sublevel',
-    time: '12:41 AM',
-    text: `The servers are dead but the room still hums. In the corner, zip-tied to a pipe: a phone. Your exact model, your case, same crack on the bottom left corner. You check your pocket. Your phone is there. You pick up the zip-tied one. The last photo in its camera roll is you, asleep, taken from inside your apartment.`,
-    choices: ['Pocket it. Evidence.', 'Smash it on the floor.', 'Call the most recent contact.'],
-  },
-  {
-    loc: 'Rooftop',
-    time: '1:09 AM',
-    text: `Wind up here. City spread out below — orange sodium glow, distant sirens. You should feel relief. You don't. Someone is standing at the far edge of the roof. Same jacket as you. Same shoes. Same build. They turn around slowly. You can't see their face from here. They raise one hand. Wave. Exactly the way you would.`,
-    choices: ['Shout at them.', 'Back away toward the door.', 'Walk toward them.'],
-  },
-  {
-    loc: 'Rooftop — Edge',
-    time: '1:22 AM',
-    text: `Up close, it is your face. Exact. Pores, scar on your chin, the small asymmetry of your left eye. It says nothing. You notice it isn't breathing. Then it leans in and whispers something you can't unhear — the exact thought you were about to have. The city below looks very far down. You understand now what it wants.`,
-    choices: ['I\'m not you.', 'What are you?', 'Run.'],
-  },
+// ─── Dialogue data ────────────────────────────────────────────────────────────
+const CAR_DIALOGUE: DialogueLine[] = [
+  { speaker: 'Mrs. Wilson', text: 'This traffic is so fucking stupid..', color: '#e57373' },
+  { speaker: 'Jax', text: 'Mom... how come there\'s so much traffic today?', color: '#90caf9' },
+  { speaker: 'Mrs. Wilson', text: 'First, you\'re cutting your hair when you get home. Second, I don\'t know.', color: '#e57373' },
+  { speaker: 'Ramona', text: 'I heard something broke out of Morrow Lab. We might go into another pandemic.', color: '#ce93d8' },
+  { speaker: 'Jax', text: 'It\'s only been four years since Covid, I don\'t want another pandemic!', color: '#90caf9' },
+  { speaker: 'Mrs. Wilson', text: 'We\'re not going into another pandemic. Stop listening to your sister\'s bullshit.', color: '#e57373' },
+  { speaker: 'Ramona', text: 'It\'s not bullshit! You\'re always glued to the TV, how come you don\'t know this?', color: '#ce93d8' },
+  { speaker: 'Mrs. Wilson', text: 'Now stop talking about this.', color: '#e57373' },
+  { speaker: '[Jax gets a Snapchat from Carmen]', text: '"Have you heard about the Morrow Lab situation?"', color: '#888' },
 ];
 
-const CAUSES = [
-  'You stopped being able to tell which one was real.',
-  'It knew your next move before you did.',
-  'The building had two exits. It covered both.',
-  'You looked in a window. You didn\'t see yourself.',
+const CARMEN_DIALOGUE: DialogueLine[] = [
+  { speaker: 'Carmen', text: 'JAX! Over here!', color: '#f48fb1' },
+  { speaker: 'Carmen', text: 'Did you see the news? Everyone on the bus won\'t shut up about Morrow Lab.', color: '#f48fb1' },
+  { speaker: 'Jax', text: 'My sister was talking about it the whole ride. Said something broke out?', color: '#90caf9' },
+  { speaker: 'Carmen', text: 'Yeah. Nobody knows what exactly. The lab\'s been on lockdown since Saturday night.', color: '#f48fb1' },
+  { speaker: 'Jax', text: 'That\'s... kind of terrifying actually.', color: '#90caf9' },
+  { speaker: 'Carmen', text: 'Right? Okay we should go inside before first bell. Walk with me?', color: '#f48fb1' },
 ];
 
-const INIT: State = {
-  hp: 100, sanity: 100, stamina: 100,
-  scene: 0,
-  items: [
-    { id: 'phone', name: 'Smartphone', emoji: '📱', desc: 'Battery at 34%. Flashlight open. Last call: Mom, 3 days ago.', qty: 1 },
-    { id: 'lighter', name: 'Lighter', emoji: '🔥', desc: 'Half-full. Mostly psychological comfort.', qty: 1 },
-    { id: 'pills', name: 'Ibuprofen', emoji: '💊', desc: 'Pocket-worn bottle. Won\'t help with what\'s happening.', qty: 3 },
-    { id: 'key', name: 'Apartment Key', emoji: '🗝️', desc: 'You want to believe you\'ll use this again.', qty: 1 },
-  ],
-  log: ['11:47 PM — entered parking structure', '11:47 PM — found writing on the wall'],
-  tension: 10,
-};
+// ─── Dialogue Box ─────────────────────────────────────────────────────────────
+function DialogueBox({ lines, onDone }: { lines: DialogueLine[]; onDone: () => void }) {
+  const [idx, setIdx] = useState(0);
+  const [shown, setShown] = useState('');
+  const [typing, setTyping] = useState(true);
+  const current = lines[idx];
+  const charRef = useRef(0);
 
-function Shell({ children, shake = false }: { children: React.ReactNode; shake?: boolean }) {
+  useEffect(() => {
+    charRef.current = 0;
+    setShown('');
+    setTyping(true);
+    const full = current.text;
+    const iv = setInterval(() => {
+      charRef.current++;
+      setShown(full.slice(0, charRef.current));
+      if (charRef.current >= full.length) { setTyping(false); clearInterval(iv); }
+    }, 20);
+    return () => clearInterval(iv);
+  }, [idx]);
+
+  const advance = () => {
+    if (typing) { setShown(current.text); setTyping(false); return; }
+    if (idx < lines.length - 1) setIdx(i => i + 1);
+    else onDone();
+  };
+
   return (
-    <div
-      className={`w-screen h-screen overflow-hidden relative${shake ? ' animate-shake' : ''}`}
-      style={{ background: '#0f0f0f', fontFamily: "'Barlow Condensed', sans-serif" }}
-    >
-      <div className="absolute inset-0 scanlines z-10 pointer-events-none" />
-      {children}
+    <div className="absolute bottom-0 left-0 right-0 z-30 p-4 pb-6" onClick={advance} style={{ cursor: 'pointer' }}>
+      <div style={{ background: 'rgba(6,6,10,0.94)', border: '1px solid rgba(255,255,255,0.08)', padding: '16px 20px 14px', maxWidth: '760px', margin: '0 auto', backdropFilter: 'blur(6px)' }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '12px', letterSpacing: '0.22em', marginBottom: '6px', color: current.color ?? '#fff' }}>
+          {current.speaker}
+        </div>
+        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: '17px', fontWeight: 300, lineHeight: '1.65', color: 'rgba(220,215,208,0.9)', minHeight: '50px' }}>
+          {shown}
+          {typing && <span style={{ borderRight: '2px solid rgba(255,255,255,0.5)', animation: 'blink 0.7s step-end infinite' }}>&nbsp;</span>}
+        </div>
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: 'rgba(180,180,180,0.25)', marginTop: '10px', textAlign: 'right', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          {idx + 1}/{lines.length} · {typing ? 'reading...' : 'click to continue'}
+        </div>
+      </div>
     </div>
   );
 }
 
-function MainMenu({ onStart }: { onStart: () => void }) {
-  const [step, setStep] = useState(0);
+// ─── CAR INTERIOR 3D ─────────────────────────────────────────────────────────
+function CarInterior() {
+  const t = useRef(0);
+  useFrame((state, delta) => {
+    t.current += delta * 0.4;
+    state.camera.position.set(Math.sin(t.current * 0.6) * 0.04, 1.1 + Math.sin(t.current * 1.2) * 0.012, 1.6);
+    state.camera.lookAt(0, 0.7, -1.5);
+  });
+
+  return (
+    <>
+      <ambientLight intensity={0.35} color="#d4c5a9" />
+      <directionalLight position={[1, 4, 2]} intensity={0.5} color="#fff8e7" />
+      <pointLight position={[-1.5, 2, -1.5]} intensity={1.2} color="#ff8800" />
+      <pointLight position={[1.5, 2, -1.5]} intensity={0.4} color="#ff6600" />
+
+      {/* Floor */}
+      <Plane args={[2.4, 3.5]} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.44, -0.3]}>
+        <meshStandardMaterial color="#0c0c0c" roughness={1} />
+      </Plane>
+      {/* Roof */}
+      <Plane args={[2.4, 3.5]} rotation={[Math.PI / 2, 0, 0]} position={[0, 1.65, -0.3]}>
+        <meshStandardMaterial color="#141414" roughness={1} />
+      </Plane>
+      {/* Left wall */}
+      <Plane args={[3.5, 2.2]} rotation={[0, Math.PI / 2, 0]} position={[-1.15, 0.7, -0.3]}>
+        <meshStandardMaterial color="#111" roughness={1} />
+      </Plane>
+      {/* Right wall */}
+      <Plane args={[3.5, 2.2]} rotation={[0, -Math.PI / 2, 0]} position={[1.15, 0.7, -0.3]}>
+        <meshStandardMaterial color="#111" roughness={1} />
+      </Plane>
+      {/* Windows left */}
+      <Plane args={[0.95, 0.65]} rotation={[0, Math.PI / 2, 0]} position={[-1.14, 1.05, 0.3]}>
+        <meshStandardMaterial color="#1a2a3a" roughness={0.05} metalness={0.3} transparent opacity={0.55} />
+      </Plane>
+      <Plane args={[0.95, 0.65]} rotation={[0, -Math.PI / 2, 0]} position={[1.14, 1.05, 0.3]}>
+        <meshStandardMaterial color="#1a2a3a" roughness={0.05} metalness={0.3} transparent opacity={0.55} />
+      </Plane>
+
+      {/* Dashboard */}
+      <Box args={[2.3, 0.35, 0.45]} position={[0, 0.6, -1.5]}>
+        <meshStandardMaterial color="#0f0f0f" roughness={0.8} />
+      </Box>
+      {/* Steering wheel */}
+      <Cylinder args={[0.22, 0.22, 0.04, 16]} position={[-0.52, 0.72, -1.3]} rotation={[1.1, 0, 0]}>
+        <meshStandardMaterial color="#222" roughness={0.6} />
+      </Cylinder>
+
+      {/* Front seats */}
+      <Box args={[0.7, 0.75, 0.55]} position={[-0.52, 0.08, -0.38]}>
+        <meshStandardMaterial color="#191919" roughness={0.95} />
+      </Box>
+      <Box args={[0.7, 0.85, 0.1]} position={[-0.52, 0.6, -0.64]}>
+        <meshStandardMaterial color="#111" roughness={0.95} />
+      </Box>
+      <Box args={[0.7, 0.75, 0.55]} position={[0.52, 0.08, -0.38]}>
+        <meshStandardMaterial color="#191919" roughness={0.95} />
+      </Box>
+      <Box args={[0.7, 0.85, 0.1]} position={[0.52, 0.6, -0.64]}>
+        <meshStandardMaterial color="#111" roughness={0.95} />
+      </Box>
+
+      {/* MRS WILSON */}
+      <group position={[-0.52, 0.35, -0.52]}>
+        <Box args={[0.36, 0.55, 0.24]} position={[0, 0.28, 0]}><meshStandardMaterial color="#383838" roughness={0.9} /></Box>
+        <Box args={[0.3, 0.3, 0.26]} position={[0, 0.68, 0]}><meshStandardMaterial color="#ead4be" roughness={0.8} /></Box>
+        <Box args={[0.32, 0.16, 0.28]} position={[0, 0.84, 0]}><meshStandardMaterial color="#2c1a0e" roughness={1} /></Box>
+      </group>
+
+      {/* RAMONA */}
+      <group position={[0.52, 0.35, 0.28]}>
+        <Box args={[0.36, 0.55, 0.24]} position={[0, 0.28, 0]}><meshStandardMaterial color="#4a3060" roughness={0.9} /></Box>
+        <Box args={[0.3, 0.3, 0.26]} position={[0, 0.68, 0]}><meshStandardMaterial color="#c8a882" roughness={0.8} /></Box>
+        <Box args={[0.32, 0.24, 0.28]} position={[0, 0.86, 0]}><meshStandardMaterial color="#100808" roughness={1} /></Box>
+      </group>
+
+      {/* JAX (sitting, back-left, camera POV near him) */}
+      <group position={[-0.52, 0.35, 0.28]}>
+        <Box args={[0.42, 0.52, 0.24]} position={[0, 0.28, 0]}><meshStandardMaterial color="#2a2a2a" roughness={0.9} /></Box>
+        <Box args={[0.32, 0.3, 0.26]} position={[0, 0.68, 0]}><meshStandardMaterial color="#f0d9c8" roughness={0.8} /></Box>
+        <Box args={[0.34, 0.14, 0.28]} position={[0, 0.82, 0]}><meshStandardMaterial color="#888" roughness={0.95} /></Box>
+        <Box args={[0.36, 0.1, 0.3]} position={[0, 0.76, 0]}><meshStandardMaterial color="#111" roughness={1} /></Box>
+        {/* Phone glow */}
+        <Box args={[0.09, 0.16, 0.02]} position={[0.14, 0.56, 0.14]}>
+          <meshStandardMaterial color="#2a4a8a" roughness={0.1} emissive="#1a3a7a" emissiveIntensity={1.5} />
+        </Box>
+        <pointLight position={[0.14, 0.56, 0.18]} intensity={0.5} color="#4466cc" distance={0.8} />
+      </group>
+
+      {/* Traffic cars outside */}
+      {[
+        { x: 2.2, z: -1, col: '#c0392b' },
+        { x: 2.8, z: -2.5, col: '#888' },
+        { x: -2.2, z: -0.5, col: '#2980b9' },
+        { x: -2.8, z: -2, col: '#27ae60' },
+      ].map((c, i) => (
+        <group key={i} position={[c.x, 0.5, c.z]}>
+          <Box args={[0.9, 0.45, 1.8]}><meshStandardMaterial color={c.col} roughness={0.7} /></Box>
+        </group>
+      ))}
+    </>
+  );
+}
+
+// ─── SCHOOL PLAYER ────────────────────────────────────────────────────────────
+function PlayerController({
+  posRef,
+  rotRef,
+  keys,
+  onInteract,
+}: {
+  posRef: React.MutableRefObject<THREE.Vector3>;
+  rotRef: React.MutableRefObject<number>;
+  keys: React.MutableRefObject<Record<string, boolean>>;
+  onInteract: (id: string) => void;
+}) {
+  const groupRef = useRef<THREE.Group>(null!);
+  const legLRef = useRef<THREE.Mesh>(null!);
+  const legRRef = useRef<THREE.Mesh>(null!);
+  const armLRef = useRef<THREE.Group>(null!);
+  const armRRef = useRef<THREE.Group>(null!);
+  const walkT = useRef(0);
+  const interacted = useRef<Record<string, boolean>>({});
+  const SPEED = 4.5;
+  const ROT = 2.4;
+
+  useFrame((state, delta) => {
+    const k = keys.current;
+    if (k['ArrowLeft'] || k['a'] || k['A']) rotRef.current += ROT * delta;
+    if (k['ArrowRight'] || k['d'] || k['D']) rotRef.current -= ROT * delta;
+
+    let moving = false;
+    const dir = new THREE.Vector3();
+    if (k['ArrowUp'] || k['w'] || k['W']) { dir.z = -1; moving = true; }
+    if (k['ArrowDown'] || k['s'] || k['S']) { dir.z = 1; moving = true; }
+
+    if (moving) {
+      dir.applyEuler(new THREE.Euler(0, rotRef.current, 0)).multiplyScalar(SPEED * delta);
+      posRef.current.add(dir);
+      posRef.current.x = Math.max(-13, Math.min(13, posRef.current.x));
+      posRef.current.z = Math.max(-20, Math.min(9, posRef.current.z));
+      walkT.current += delta * 6;
+    }
+
+    if (groupRef.current) {
+      groupRef.current.position.copy(posRef.current);
+      groupRef.current.rotation.y = rotRef.current;
+    }
+
+    // Leg swing
+    const sw = moving ? Math.sin(walkT.current) * 0.42 : 0;
+    if (legLRef.current) legLRef.current.rotation.x += (sw - legLRef.current.rotation.x) * 0.25;
+    if (legRRef.current) legRRef.current.rotation.x += (-sw - legRRef.current.rotation.x) * 0.25;
+    if (armLRef.current) armLRef.current.rotation.x += (-sw * 0.5 - armLRef.current.rotation.x) * 0.25;
+    if (armRRef.current) armRRef.current.rotation.x += (sw * 0.5 - armRRef.current.rotation.x) * 0.25;
+
+    // Camera follow
+    const cd = 5, ch = 3.5;
+    const tx = posRef.current.x - Math.sin(rotRef.current) * cd;
+    const tz = posRef.current.z + Math.cos(rotRef.current) * cd;
+    state.camera.position.lerp(new THREE.Vector3(tx, ch, tz), 0.09);
+    state.camera.lookAt(posRef.current.x, 1.3, posRef.current.z);
+
+    // Interaction zones
+    const p = posRef.current;
+    if (!interacted.current['carmen'] && Math.hypot(p.x - (-5.5), p.z - (-2.5)) < 2.2) {
+      interacted.current['carmen'] = true;
+      onInteract('carmen');
+    }
+    if (!interacted.current['school'] && Math.hypot(p.x - 0, p.z - (-15)) < 2.8) {
+      interacted.current['school'] = true;
+      onInteract('school');
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Body */}
+      <Box args={[0.52, 0.65, 0.28]} position={[0, 1.05, 0]}><meshStandardMaterial color="#2a2a2a" roughness={0.9} /></Box>
+      {/* Head */}
+      <Box args={[0.34, 0.34, 0.3]} position={[0, 1.55, 0]}><meshStandardMaterial color="#f0d9c8" roughness={0.8} /></Box>
+      {/* Hair — messy */}
+      <Box args={[0.36, 0.09, 0.32]} position={[0, 1.73, -0.02]}><meshStandardMaterial color="#111" roughness={1} /></Box>
+      <Box args={[0.16, 0.07, 0.1]} position={[0.1, 1.69, 0.14]}><meshStandardMaterial color="#111" roughness={1} /></Box>
+      <Box args={[0.12, 0.07, 0.08]} position={[-0.12, 1.7, 0.13]}><meshStandardMaterial color="#111" roughness={1} /></Box>
+      {/* Beanie */}
+      <Box args={[0.38, 0.15, 0.34]} position={[0, 1.81, 0]}><meshStandardMaterial color="#888" roughness={0.95} /></Box>
+      {/* Eyes */}
+      <Box args={[0.06, 0.05, 0.01]} position={[-0.08, 1.55, 0.156]}><meshStandardMaterial color="#111" /></Box>
+      <Box args={[0.06, 0.05, 0.01]} position={[0.08, 1.55, 0.156]}><meshStandardMaterial color="#111" /></Box>
+      {/* Pants */}
+      <mesh ref={legLRef} position={[-0.13, 0.6, 0]}>
+        <Box args={[0.22, 0.52, 0.24]}><meshStandardMaterial color="#1a1a2e" roughness={0.95} /></Box>
+      </mesh>
+      <mesh ref={legRRef} position={[0.13, 0.6, 0]}>
+        <Box args={[0.22, 0.52, 0.24]}><meshStandardMaterial color="#1a1a2e" roughness={0.95} /></Box>
+      </mesh>
+      {/* Shoes */}
+      <Box args={[0.24, 0.1, 0.3]} position={[-0.13, 0.33, 0.04]}><meshStandardMaterial color="#222" roughness={0.7} /></Box>
+      <Box args={[0.24, 0.1, 0.3]} position={[0.13, 0.33, 0.04]}><meshStandardMaterial color="#222" roughness={0.7} /></Box>
+      {/* Arms */}
+      <group ref={armLRef} position={[-0.32, 1.2, 0]}>
+        <Box args={[0.18, 0.5, 0.2]}><meshStandardMaterial color="#2a2a2a" roughness={0.9} /></Box>
+        <Box args={[0.15, 0.12, 0.15]} position={[0, -0.32, 0]}><meshStandardMaterial color="#f0d9c8" roughness={0.8} /></Box>
+      </group>
+      <group ref={armRRef} position={[0.32, 1.2, 0]}>
+        <Box args={[0.18, 0.5, 0.2]}><meshStandardMaterial color="#2a2a2a" roughness={0.9} /></Box>
+        <Box args={[0.15, 0.12, 0.15]} position={[0, -0.32, 0]}><meshStandardMaterial color="#f0d9c8" roughness={0.8} /></Box>
+        <Box args={[0.08, 0.14, 0.02]} position={[0.05, -0.39, 0.09]}><meshStandardMaterial color="#111" roughness={0.3} metalness={0.5} /></Box>
+      </group>
+    </group>
+  );
+}
+
+// ─── SCHOOL WORLD ─────────────────────────────────────────────────────────────
+function SchoolWorld({
+  posRef,
+  rotRef,
+  keys,
+  onInteract,
+}: {
+  posRef: React.MutableRefObject<THREE.Vector3>;
+  rotRef: React.MutableRefObject<number>;
+  keys: React.MutableRefObject<Record<string, boolean>>;
+  onInteract: (id: string) => void;
+}) {
+  return (
+    <>
+      <ambientLight intensity={0.5} color="#c8d8f0" />
+      <directionalLight position={[5, 14, 6]} intensity={1.1} color="#f0f4ff" />
+      <pointLight position={[0, 8, -14]} intensity={0.6} color="#c0d4f0" />
+      <fog attach="fog" args={['#181c28', 20, 50]} />
+
+      {/* Ground */}
+      <Plane args={[50, 50]} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -5]}>
+        <meshStandardMaterial color="#1a1c22" roughness={1} />
+      </Plane>
+      {/* Sidewalk strip */}
+      <Box args={[24, 0.1, 3.5]} position={[0, 0.05, -12.5]}>
+        <meshStandardMaterial color="#25272e" roughness={0.95} />
+      </Box>
+
+      {/* ── SCHOOL BUILDING ── */}
+      <Box args={[20, 8, 4.5]} position={[0, 4, -17]}>
+        <meshStandardMaterial color="#252830" roughness={0.9} />
+      </Box>
+      {/* Roof */}
+      <Box args={[21, 0.45, 5.5]} position={[0, 8.22, -16.5]}>
+        <meshStandardMaterial color="#18191e" roughness={0.9} />
+      </Box>
+      {/* Windows row top */}
+      {[-7, -3.5, 0, 3.5, 7].map((x, i) => (
+        <group key={i}>
+          <Box args={[2, 1.5, 0.12]} position={[x, 5.5, -14.75]}>
+            <meshStandardMaterial color="#8ab0d0" roughness={0.08} metalness={0.4} transparent opacity={0.75} />
+          </Box>
+          <pointLight position={[x, 5.5, -14.2]} intensity={0.6} color="#b8ccf0" distance={4} />
+          <Box args={[2, 1.5, 0.12]} position={[x, 2.8, -14.75]}>
+            <meshStandardMaterial color="#8ab0d0" roughness={0.08} metalness={0.4} transparent opacity={0.75} />
+          </Box>
+        </group>
+      ))}
+      {/* Main door */}
+      <Box args={[1.8, 3.0, 0.14]} position={[0, 1.5, -14.73]}>
+        <meshStandardMaterial color="#3a4a5a" roughness={0.5} metalness={0.3} />
+      </Box>
+      <Box args={[2.2, 0.18, 0.18]} position={[0, 3.08, -14.72]}>
+        <meshStandardMaterial color="#555" roughness={0.7} />
+      </Box>
+      {/* School name */}
+      <Text position={[0, 7.3, -14.6]} fontSize={0.32} color="#aabbcc" anchorX="center" outlineWidth={0.02} outlineColor="#000">
+        Morrow Middle School
+      </Text>
+      {/* Walk-here prompt */}
+      <Text position={[0, 3.9, -14.5]} fontSize={0.2} color="#ffd700" anchorX="center" outlineWidth={0.015} outlineColor="#000">
+        [Walk to entrance]
+      </Text>
+
+      {/* ── BUS STOP ── */}
+      <group position={[-5.5, 0, -3]}>
+        <Box args={[2.6, 2.8, 0.12]} position={[0, 1.4, 0]}>
+          <meshStandardMaterial color="#2e3545" transparent opacity={0.8} roughness={0.6} />
+        </Box>
+        <Box args={[0.1, 2.8, 1.4]} position={[-1.25, 1.4, -0.6]}>
+          <meshStandardMaterial color="#555" roughness={0.8} />
+        </Box>
+        <Box args={[2.6, 0.12, 1.4]} position={[0, 2.8, -0.6]}>
+          <meshStandardMaterial color="#222" roughness={0.9} />
+        </Box>
+        <Box args={[2.1, 0.12, 0.4]} position={[0, 0.52, -0.8]}>
+          <meshStandardMaterial color="#1a1a1a" roughness={0.9} />
+        </Box>
+        <Cylinder args={[0.04, 0.04, 3, 8]} position={[1.15, 1.5, 0]}>
+          <meshStandardMaterial color="#777" roughness={0.5} metalness={0.3} />
+        </Cylinder>
+        <Box args={[0.55, 0.28, 0.06]} position={[1.15, 2.7, 0]}>
+          <meshStandardMaterial color="#c0392b" roughness={0.8} />
+        </Box>
+      </group>
+
+      {/* ── CARMEN ── */}
+      <group position={[-5.5, 0, -2.3]}>
+        <Box args={[0.44, 0.62, 0.26]} position={[0, 1.05, 0]}><meshStandardMaterial color="#b5351a" roughness={0.9} /></Box>
+        <Box args={[0.32, 0.32, 0.28]} position={[0, 1.54, 0]}><meshStandardMaterial color="#c68642" roughness={0.8} /></Box>
+        <Box args={[0.34, 0.22, 0.3]} position={[0, 1.74, -0.03]}><meshStandardMaterial color="#0d0600" roughness={1} /></Box>
+        <Box args={[0.42, 0.52, 0.24]} position={[0, 0.6, 0]}><meshStandardMaterial color="#1a1a2e" roughness={0.95} /></Box>
+        <Box args={[0.09, 0.15, 0.02]} position={[0.21, 1.12, 0.14]}><meshStandardMaterial color="#111" roughness={0.3} metalness={0.5} /></Box>
+        <Text position={[0, 2.4, 0]} fontSize={0.2} color="#f48fb1" anchorX="center" outlineWidth={0.018} outlineColor="#000">
+          Carmen — walk up
+        </Text>
+      </group>
+
+      {/* ── PARKED / TRAFFIC CARS ── */}
+      {[
+        { x: -3.5, z: 5.5, col: '#c0392b' },
+        { x: -1, z: 7, col: '#888' },
+        { x: 2, z: 5, col: '#2980b9' },
+        { x: 5, z: 7.5, col: '#f39c12' },
+        { x: 8, z: 5.5, col: '#1abc9c' },
+      ].map((c, i) => (
+        <group key={i} position={[c.x, 0, c.z]}>
+          <Box args={[2, 0.9, 4.2]} position={[0, 0.45, 0]}><meshStandardMaterial color={c.col} roughness={0.65} /></Box>
+          <Box args={[1.8, 0.55, 2.5]} position={[0, 1.17, -0.2]}><meshStandardMaterial color={c.col} roughness={0.65} /></Box>
+          <Box args={[1.6, 0.42, 0.08]} position={[0, 1.2, 0.95]}><meshStandardMaterial color="#2a3a4a" transparent opacity={0.65} roughness={0.08} /></Box>
+          {([-0.9, 0.9] as number[]).flatMap(wx =>
+            ([-0.7, 1.3] as number[]).map((wz, wi) => (
+              <Cylinder key={`${wx}-${wi}`} args={[0.3, 0.3, 0.26, 10]} position={[wx, 0.28, wz]} rotation={[0, 0, Math.PI / 2]}>
+                <meshStandardMaterial color="#111" roughness={0.9} />
+              </Cylinder>
+            ))
+          )}
+        </group>
+      ))}
+
+      {/* ── STREET LAMPS ── */}
+      {[-9, -4, 4, 9].map((x, i) => (
+        <group key={i} position={[x, 0, -9]}>
+          <Cylinder args={[0.06, 0.09, 6.5, 8]} position={[0, 3.25, 0]}>
+            <meshStandardMaterial color="#555" roughness={0.7} metalness={0.4} />
+          </Cylinder>
+          <Box args={[1.4, 0.1, 0.45]} position={[0.5, 6.5, 0]}>
+            <meshStandardMaterial color="#444" roughness={0.7} metalness={0.4} />
+          </Box>
+          <Sphere args={[0.16, 8, 8]} position={[1.1, 6.44, 0]}>
+            <meshStandardMaterial color="#fff9d0" emissive="#ffe880" emissiveIntensity={3} />
+          </Sphere>
+          <pointLight position={[x + 1.1, 6.2, -9]} intensity={2} color="#ffe8a0" distance={12} />
+        </group>
+      ))}
+
+      {/* ── TREES ── */}
+      {[[-11, -6], [11, -6], [-11, -11], [11, -11], [-11, 1], [11, 1]].map(([x, z], i) => (
+        <group key={i} position={[x as number, 0, z as number]}>
+          <Cylinder args={[0.13, 0.18, 2.4, 7]} position={[0, 1.2, 0]}>
+            <meshStandardMaterial color="#3a2a1a" roughness={1} />
+          </Cylinder>
+          <Sphere args={[1.15, 7, 6]} position={[0, 2.95, 0]}>
+            <meshStandardMaterial color="#182618" roughness={1} />
+          </Sphere>
+        </group>
+      ))}
+
+      <PlayerController posRef={posRef} rotRef={rotRef} keys={keys} onInteract={onInteract} />
+    </>
+  );
+}
+
+// ─── SCHOOL SCREEN ────────────────────────────────────────────────────────────
+function SchoolScreen({ onEnd }: { onEnd: () => void }) {
+  const posRef = useRef(new THREE.Vector3(0, 0, 6));
+  const rotRef = useRef(Math.PI);
+  const keys = useRef<Record<string, boolean>>({});
+  const [dialogue, setDialogue] = useState<DialogueLine[] | null>(null);
+
   useEffect(() => {
-    const t1 = setTimeout(() => setStep(1), 400);
-    const t2 = setTimeout(() => setStep(2), 1100);
-    const t3 = setTimeout(() => setStep(3), 1900);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    const dn = (e: KeyboardEvent) => { keys.current[e.key] = true; };
+    const up = (e: KeyboardEvent) => { keys.current[e.key] = false; };
+    window.addEventListener('keydown', dn);
+    window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up); };
   }, []);
 
+  const handleInteract = useCallback((id: string) => {
+    if (id === 'carmen') setDialogue(CARMEN_DIALOGUE);
+    if (id === 'school') onEnd();
+  }, [onEnd]);
+
   return (
-    <Shell>
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url(${BG})`, filter: 'brightness(0.18) contrast(1.1) saturate(0.3)' }}
-      />
-      <div className="relative z-20 flex flex-col items-center justify-center h-full gap-6 px-6">
-        <div style={{ opacity: step >= 1 ? 1 : 0, transition: 'opacity 0.8s', textAlign: 'center' }}>
-          <div className="tag mb-3" style={{ color: 'rgba(192,57,43,0.6)', letterSpacing: '0.3em' }}>
-            2024 &nbsp;·&nbsp; abandoned building &nbsp;·&nbsp; single player
+    <div className="w-screen h-screen relative overflow-hidden">
+      {/* HUD top */}
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2" style={{ background: 'rgba(0,0,0,0.58)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '15px', letterSpacing: '0.18em', color: 'rgba(210,210,210,0.65)' }}>DOPPELGANGER</div>
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', color: 'rgba(192,57,43,0.65)', textTransform: 'uppercase' }}>Chapter I · Monday, Sept 9, 2024 · 7:43 AM</div>
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: 'rgba(180,180,180,0.28)', letterSpacing: '0.1em' }}>JAXTON WILSON</div>
+      </div>
+
+      {/* Infection status */}
+      <div className="absolute z-20" style={{ top: '48px', left: '16px', background: 'rgba(0,0,0,0.52)', border: '1px solid rgba(255,255,255,0.06)', padding: '8px 12px' }}>
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '8px', letterSpacing: '0.15em', color: 'rgba(39,174,96,0.7)', textTransform: 'uppercase', marginBottom: '3px' }}>● Infection Status</div>
+        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: '13px', color: 'rgba(200,200,200,0.55)' }}>Stage 0 — Clean</div>
+      </div>
+
+      {/* Controls */}
+      <div className="absolute bottom-4 right-4 z-20" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.1em', color: 'rgba(180,180,180,0.22)', textAlign: 'right', textTransform: 'uppercase', lineHeight: '1.9' }}>
+        W / ↑ &nbsp;Forward<br />
+        A / D &nbsp;Turn<br />
+        S / ↓ &nbsp;Back
+      </div>
+
+      <Canvas camera={{ fov: 58, position: [0, 3.5, 10] }} style={{ background: '#0f1018' }}>
+        <SchoolWorld posRef={posRef} rotRef={rotRef} keys={keys} onInteract={handleInteract} />
+      </Canvas>
+
+      {dialogue && <DialogueBox lines={dialogue} onDone={() => setDialogue(null)} />}
+    </div>
+  );
+}
+
+// ─── CUTSCENE ─────────────────────────────────────────────────────────────────
+function CutsceneScreen({ onDone }: { onDone: () => void }) {
+  return (
+    <div className="w-screen h-screen relative overflow-hidden">
+      <div className="absolute top-3 left-1/2 z-30 -translate-x-1/2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.2em', color: 'rgba(180,180,180,0.3)', textTransform: 'uppercase' }}>
+        Monday · Sept 9 · 7:41 AM · In the car
+      </div>
+      <button
+        className="absolute top-3 right-4 z-30"
+        style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(180,180,180,0.22)', background: 'none', border: 'none', cursor: 'pointer', textTransform: 'uppercase' }}
+        onClick={onDone}
+      >
+        skip →
+      </button>
+      <Canvas camera={{ fov: 65, position: [0, 1.1, 1.6] }} style={{ background: '#070707' }}>
+        <CarInterior />
+      </Canvas>
+      <DialogueBox lines={CAR_DIALOGUE} onDone={onDone} />
+    </div>
+  );
+}
+
+// ─── MAIN MENU ────────────────────────────────────────────────────────────────
+function MainMenu({ onStart }: { onStart: () => void }) {
+  const [vis, setVis] = useState(false);
+  useEffect(() => { setTimeout(() => setVis(true), 300); }, []);
+
+  return (
+    <div className="w-screen h-screen flex flex-col items-center justify-center text-center px-6 relative overflow-hidden" style={{ background: '#09090f', fontFamily: "'Barlow Condensed', sans-serif" }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 30% 60%, rgba(192,57,43,0.07) 0%, transparent 55%), radial-gradient(ellipse at 70% 30%, rgba(30,50,80,0.12) 0%, transparent 55%)' }} />
+      <div className="relative z-10 flex flex-col items-center gap-5">
+        <div style={{ opacity: vis ? 1 : 0, transition: 'opacity 0.9s, transform 0.9s', transform: vis ? 'none' : 'translateY(10px)' }}>
+          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '0.35em', color: 'rgba(192,57,43,0.5)', textTransform: 'uppercase', marginBottom: '12px' }}>
+            2024 &nbsp;·&nbsp; Chapter I
           </div>
-          <div className="animate-glitch">
-            <span style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 'clamp(56px, 11vw, 130px)',
-              color: '#d0d0d0',
-              letterSpacing: '0.06em',
-              lineHeight: 1,
-              display: 'block',
-            }}>
-              DOPPELGANGER
-            </span>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(52px, 10vw, 108px)', color: '#d8d8d8', letterSpacing: '0.07em', lineHeight: 1 }}>
+            DOPPELGANGER
           </div>
-          <div style={{
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontSize: '13px',
-            color: 'rgba(180,180,180,0.4)',
-            letterSpacing: '0.18em',
-            marginTop: '8px',
-            opacity: step >= 2 ? 1 : 0,
-            transition: 'opacity 0.6s',
-            textTransform: 'uppercase',
-          }}>
-            Something in that building knows who you are
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontStyle: 'italic', fontSize: '14px', color: 'rgba(180,180,180,0.35)', letterSpacing: '0.12em', marginTop: '8px', textTransform: 'uppercase' }}>
+            Something escaped from Morrow Lab
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-3 mt-2" style={{ opacity: step >= 3 ? 1 : 0, transition: 'opacity 0.6s' }}>
+        <div style={{ opacity: vis ? 1 : 0, transition: 'opacity 1.2s 0.5s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
           <button
             onClick={onStart}
-            style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: '18px',
-              letterSpacing: '0.25em',
-              color: '#d0d0d0',
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.12)',
-              padding: '10px 40px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(192,57,43,0.7)';
-              (e.currentTarget as HTMLElement).style.color = '#fff';
-              (e.currentTarget as HTMLElement).style.background = 'rgba(192,57,43,0.08)';
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)';
-              (e.currentTarget as HTMLElement).style.color = '#d0d0d0';
-              (e.currentTarget as HTMLElement).style.background = 'transparent';
-            }}
+            style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '17px', letterSpacing: '0.28em', color: '#d8d8d8', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', padding: '11px 44px', cursor: 'pointer', transition: 'all 0.2s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(192,57,43,0.7)'; (e.currentTarget as HTMLElement).style.background = 'rgba(192,57,43,0.07)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
-            ENTER THE BUILDING
+            START CHAPTER I
           </button>
-          <button style={{
-            fontFamily: "'Share Tech Mono', monospace",
-            fontSize: '10px',
-            letterSpacing: '0.2em',
-            color: 'rgba(150,150,150,0.3)',
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            textTransform: 'uppercase',
-          }}>
-            settings
-          </button>
+          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(150,150,150,0.22)', textTransform: 'uppercase' }}>
+            Playing as Jaxton Wilson · 7th Grade
+          </div>
         </div>
 
-        <div className="absolute bottom-5" style={{
-          fontFamily: "'Barlow Condensed', sans-serif",
-          fontStyle: 'italic',
-          fontSize: '12px',
-          color: 'rgba(150,150,150,0.22)',
-          letterSpacing: '0.05em',
-          opacity: step >= 3 ? 1 : 0,
-          transition: 'opacity 1s',
-        }}>
-          "I saw myself across the street. I was not there."
-        </div>
-      </div>
-    </Shell>
-  );
-}
-
-function Gameplay({ state, onChoice, onInventory }: { state: State; onChoice: (i: number) => void; onInventory: () => void }) {
-  const s = SCENES[Math.min(state.scene, SCENES.length - 1)];
-  const [textIn, setTextIn] = useState(false);
-  const [choicesIn, setChoicesIn] = useState(false);
-
-  useEffect(() => {
-    setTextIn(false);
-    setChoicesIn(false);
-    const t1 = setTimeout(() => setTextIn(true), 120);
-    const t2 = setTimeout(() => setChoicesIn(true), 900);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [state.scene]);
-
-  const danger = state.tension > 65;
-
-  return (
-    <Shell>
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${BG})`, filter: 'brightness(0.08) contrast(1.2) saturate(0)' }} />
-
-      {danger && (
-        <div
-          className="absolute inset-0 pointer-events-none z-10"
-          style={{
-            boxShadow: `inset 0 0 ${60 + state.tension}px rgba(192,57,43,${0.07 + state.tension / 600})`,
-            animation: state.tension > 80 ? 'pulse-danger 1.2s ease-in-out infinite' : 'none',
-          }}
-        />
-      )}
-
-      <div className="relative z-20 flex flex-col h-full">
-        {/* HUD top */}
-        <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.6)' }}>
-          <div className="flex flex-col gap-1.5 w-44">
-            {[
-              { label: 'HP', val: state.hp, cls: 'hp-bar' },
-              { label: 'SANITY', val: state.sanity, cls: 'sanity-bar' },
-              { label: 'STAM', val: state.stamina, cls: 'stamina-bar' },
-            ].map(bar => (
-              <div key={bar.label} className="flex items-center gap-2">
-                <span className="tag w-12 text-right shrink-0" style={{ color: 'rgba(180,180,180,0.32)' }}>{bar.label}</span>
-                <div className="flex-1 h-1 rounded-sm overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                  <div className={bar.cls} style={{ width: `${bar.val}%`, height: '100%' }} />
-                </div>
-                <span className="tag w-6" style={{ color: 'rgba(180,180,180,0.28)' }}>{bar.val}</span>
+        {/* Character bar */}
+        <div style={{ display: 'flex', gap: '18px', opacity: vis ? 1 : 0, transition: 'opacity 1.5s 0.9s' }}>
+          {[
+            { name: 'JAX', col: '#888', active: true },
+            { name: 'CARMEN', col: '#c68642', active: false },
+            { name: 'KALEB', col: '#2a2a2a', active: false },
+            { name: 'AIDEN', col: '#d4a574', active: false },
+            { name: 'REAGAN', col: '#e8d0c0', active: false },
+          ].map((ch) => (
+            <div key={ch.name} style={{ textAlign: 'center', opacity: ch.active ? 1 : 0.28 }}>
+              <div style={{ width: '38px', height: '38px', border: `1px solid ${ch.active ? 'rgba(192,57,43,0.6)' : 'rgba(255,255,255,0.08)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 5px', background: ch.active ? 'rgba(192,57,43,0.07)' : 'transparent' }}>
+                <div style={{ width: '20px', height: '20px', background: ch.col, borderRadius: '2px' }} />
               </div>
-            ))}
-          </div>
-
-          <div className="text-center flex-1 px-4">
-            <div className="tag mb-0.5" style={{ color: 'rgba(192,57,43,0.5)' }}>{s.time}</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '17px', letterSpacing: '0.12em', color: 'rgba(220,220,220,0.7)' }}>
-              {s.loc}
+              <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '8px', color: 'rgba(180,180,180,0.38)', letterSpacing: '0.1em' }}>{ch.name}</div>
             </div>
-          </div>
-
-          <div className="flex gap-2">
-            <button className="grunge-border p-2 transition-colors hover:bg-white/5" style={{ color: 'rgba(180,180,180,0.45)' }} onClick={onInventory}>
-              <Icon name="Backpack" size={15} />
-            </button>
-            <button className="grunge-border p-2 transition-colors hover:bg-white/5" style={{ color: 'rgba(180,180,180,0.3)' }}>
-              <Icon name="FileText" size={15} />
-            </button>
-          </div>
-        </div>
-
-        {/* Narrative */}
-        <div className="flex-1 flex flex-col justify-center px-6 md:px-14 max-w-2xl mx-auto w-full py-6">
-          <div style={{
-            opacity: textIn ? 1 : 0,
-            transform: textIn ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'all 0.6s ease',
-            fontFamily: "'Barlow Condensed', sans-serif",
-            fontSize: '16px',
-            fontWeight: 300,
-            lineHeight: '1.85',
-            color: 'rgba(210,205,200,0.8)',
-            marginBottom: '28px',
-            letterSpacing: '0.02em',
-          }}>
-            {s.text}
-          </div>
-
-          <div className="flex flex-col gap-2" style={{
-            opacity: choicesIn ? 1 : 0,
-            transform: choicesIn ? 'translateY(0)' : 'translateY(10px)',
-            transition: 'all 0.5s ease',
-          }}>
-            <div className="tag mb-1" style={{ color: 'rgba(255,255,255,0.18)' }}>── choose ──</div>
-            {s.choices.map((c, i) => (
-              <button key={i} className="choice-btn" onClick={() => onChoice(i)}>
-                <span style={{ color: 'rgba(192,57,43,0.55)', marginRight: '10px', fontFamily: "'Share Tech Mono', monospace", fontSize: '11px' }}>
-                  [{String.fromCharCode(65 + i)}]
-                </span>
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Log */}
-        <div className="px-4 py-2 shrink-0 overflow-hidden" style={{
-          borderTop: '1px solid rgba(255,255,255,0.04)',
-          background: 'rgba(0,0,0,0.5)',
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: '10px',
-          color: 'rgba(180,180,180,0.2)',
-          letterSpacing: '0.05em',
-          whiteSpace: 'nowrap',
-          textOverflow: 'ellipsis',
-        }}>
-          {state.log.slice(-2).join('  ·  ')}
-        </div>
-      </div>
-    </Shell>
-  );
-}
-
-function Inventory({ state, onClose }: { state: State; onClose: () => void }) {
-  const [sel, setSel] = useState<Item | null>(null);
-  return (
-    <Shell>
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${BG})`, filter: 'brightness(0.07) saturate(0)' }} />
-      <div className="relative z-20 flex flex-col h-full p-5">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <div className="tag mb-1">personal effects</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px', letterSpacing: '0.1em', color: 'rgba(220,220,220,0.8)' }}>INVENTORY</div>
-          </div>
-          <button className="grunge-border p-2 hover:bg-white/5 transition-colors" style={{ color: 'rgba(180,180,180,0.45)' }} onClick={onClose}>
-            <Icon name="X" size={16} />
-          </button>
-        </div>
-
-        <div className="flex gap-5 flex-1 min-h-0">
-          <div className="flex-1">
-            <div className="grid grid-cols-3 gap-2 content-start">
-              {state.items.map(item => (
-                <button key={item.id} className={`inv-slot p-3${sel?.id === item.id ? ' active' : ''}`} onClick={() => setSel(sel?.id === item.id ? null : item)}>
-                  <span style={{ fontSize: '28px', lineHeight: 1 }}>{item.emoji}</span>
-                  <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.08em', color: 'rgba(180,180,180,0.5)', textTransform: 'uppercase', textAlign: 'center' }}>
-                    {item.name}
-                  </span>
-                  {item.qty > 1 && <span className="tag">×{item.qty}</span>}
-                </button>
-              ))}
-              {Array.from({ length: Math.max(0, 9 - state.items.length) }).map((_, i) => (
-                <div key={i} className="inv-slot" style={{ opacity: 0.15 }}>
-                  <div style={{ width: 20, height: 20, border: '1px dashed rgba(255,255,255,0.12)' }} />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="w-48 shrink-0 p-4 flex flex-col" style={{ border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.4)' }}>
-            {sel ? (
-              <>
-                <div style={{ fontSize: '36px', textAlign: 'center', marginBottom: '10px' }}>{sel.emoji}</div>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '16px', letterSpacing: '0.1em', color: 'rgba(220,220,220,0.8)', marginBottom: '8px' }}>{sel.name}</div>
-                <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontStyle: 'italic', fontSize: '13px', color: 'rgba(180,180,180,0.48)', lineHeight: '1.6', flex: 1 }}>{sel.desc}</div>
-              </>
-            ) : (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', color: 'rgba(180,180,180,0.18)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                select item
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <span className="tag" style={{ color: 'rgba(255,255,255,0.16)' }}>Equipped</span>
-          {['📱', '🔥', '—', '—'].map((e, i) => (
-            <div key={i} className="inv-slot" style={{ width: 38, height: 38, fontSize: '18px', opacity: e === '—' ? 0.15 : 1 }}>{e}</div>
           ))}
         </div>
       </div>
-    </Shell>
-  );
-}
 
-function GameOver({ cause, onRestart }: { cause: string; onRestart: () => void }) {
-  const [vis, setVis] = useState(false);
-  useEffect(() => { setTimeout(() => setVis(true), 600); }, []);
-  return (
-    <Shell>
-      <div className="absolute inset-0" style={{ background: vis ? 'radial-gradient(ellipse at center, rgba(30,0,0,0.65) 0%, #000 80%)' : '#000', transition: 'background 2s' }} />
-      <div className="relative z-20 flex flex-col items-center justify-center h-full text-center px-8">
-        <div style={{ opacity: vis ? 1 : 0, transform: vis ? 'scale(1)' : 'scale(0.97)', transition: 'all 1.5s ease' }}>
-          <div className="tag mb-4" style={{ color: 'rgba(192,57,43,0.55)', letterSpacing: '0.3em' }}>— GAME OVER —</div>
-          <div className="animate-glitch" style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(52px, 10vw, 100px)', color: '#c0392b', letterSpacing: '0.08em', lineHeight: 1 }}>
-            YOU DIDN'T MAKE IT
-          </div>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontStyle: 'italic', fontSize: '15px', color: 'rgba(180,180,180,0.38)', marginTop: '16px', maxWidth: '420px' }}>
-            {cause}
-          </div>
-          <div style={{ width: '80px', height: '1px', background: 'rgba(192,57,43,0.25)', margin: '24px auto' }} />
-          <div className="flex flex-col items-center gap-3">
-            <button
-              onClick={onRestart}
-              style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '16px', letterSpacing: '0.25em', color: '#d0d0d0', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 36px', cursor: 'pointer', transition: 'all 0.2s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(192,57,43,0.6)'; (e.currentTarget as HTMLElement).style.background = 'rgba(192,57,43,0.07)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              TRY AGAIN
-            </button>
-            <button onClick={onRestart} style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '0.15em', color: 'rgba(150,150,150,0.22)', background: 'none', border: 'none', cursor: 'pointer', textTransform: 'uppercase' }}>
-              main menu
-            </button>
-          </div>
-        </div>
+      <div style={{ position: 'absolute', bottom: '20px', fontFamily: "'Barlow Condensed', sans-serif", fontStyle: 'italic', fontSize: '12px', color: 'rgba(150,150,150,0.18)', opacity: vis ? 1 : 0, transition: 'opacity 2s 1.2s' }}>
+        "Clones want to feel real. That's what makes them dangerous."
       </div>
-    </Shell>
+    </div>
   );
 }
 
-function Win({ onRestart }: { onRestart: () => void }) {
+// ─── END CARD ─────────────────────────────────────────────────────────────────
+function EndCard({ onRestart }: { onRestart: () => void }) {
   const [vis, setVis] = useState(false);
-  useEffect(() => { setTimeout(() => setVis(true), 500); }, []);
+  useEffect(() => { setTimeout(() => setVis(true), 400); }, []);
   return (
-    <Shell>
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${BG})`, filter: 'brightness(0.1) saturate(0.1)' }} />
-      <div className="relative z-20 flex flex-col items-center justify-center h-full text-center px-8">
-        <div style={{ opacity: vis ? 1 : 0, transition: 'opacity 2s' }}>
-          <div className="tag mb-4" style={{ letterSpacing: '0.3em', color: 'rgba(255,255,255,0.25)' }}>— END —</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(48px, 9vw, 90px)', color: 'rgba(210,210,210,0.82)', letterSpacing: '0.08em', lineHeight: 1 }}>
-            YOU GOT OUT
-          </div>
-          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontStyle: 'italic', fontSize: '15px', color: 'rgba(180,180,180,0.32)', marginTop: '14px', maxWidth: '380px' }}>
-            But it didn't chase you. It watched you leave. It already knows where you live.
-          </div>
-          <div style={{ marginTop: '32px' }}>
-            <button
-              onClick={onRestart}
-              style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '16px', letterSpacing: '0.25em', color: '#d0d0d0', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 36px', cursor: 'pointer' }}
-            >
-              PLAY AGAIN
-            </button>
-          </div>
+    <div className="w-screen h-screen flex flex-col items-center justify-center text-center px-8" style={{ background: '#060608', fontFamily: "'Barlow Condensed', sans-serif" }}>
+      <div style={{ opacity: vis ? 1 : 0, transition: 'opacity 1.5s' }}>
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.28em', color: 'rgba(192,57,43,0.45)', textTransform: 'uppercase', marginBottom: '14px' }}>End of Chapter I</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(40px, 8vw, 78px)', color: '#d8d8d8', letterSpacing: '0.06em', lineHeight: 1, marginBottom: '16px' }}>The Day It Began</div>
+        <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontStyle: 'italic', fontSize: '15px', color: 'rgba(180,180,180,0.42)', maxWidth: '420px', lineHeight: '1.7', margin: '0 auto 30px' }}>
+          Jax doesn't know it yet. But something from Morrow Lab is already much closer than he thinks.
         </div>
+        <button
+          onClick={onRestart}
+          style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '15px', letterSpacing: '0.25em', color: '#d8d8d8', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 36px', cursor: 'pointer', transition: 'all 0.2s' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(192,57,43,0.6)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; }}
+        >
+          PLAY AGAIN
+        </button>
       </div>
-    </Shell>
+    </div>
   );
 }
 
+// ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function Index() {
   const [screen, setScreen] = useState<Screen>('menu');
-  const [state, setState] = useState<State>(INIT);
-  const [shake, setShake] = useState(false);
-
-  const triggerShake = () => {
-    setShake(true);
-    setTimeout(() => setShake(false), 450);
-  };
-
-  const handleChoice = useCallback((i: number) => {
-    triggerShake();
-    setState(prev => {
-      const sanityDelta = i === 1 ? -3 : i === 2 ? +2 : -8;
-      const hpDelta = Math.random() < 0.25 ? -(Math.floor(Math.random() * 12) + 5) : 0;
-      const newSanity = Math.max(0, prev.sanity + sanityDelta);
-      const newHp = Math.max(0, prev.hp + hpDelta);
-      const newScene = prev.scene + 1;
-      const newTension = Math.min(100, prev.tension + 12 + i * 4);
-
-      if (newSanity <= 0 || newHp <= 0) {
-        setTimeout(() => setScreen('game-over'), 400);
-        return { ...prev, sanity: newSanity, hp: newHp };
-      }
-      if (newScene >= SCENES.length) {
-        setTimeout(() => setScreen('win'), 400);
-        return prev;
-      }
-
-      const s = SCENES[newScene];
-      return {
-        ...prev,
-        scene: newScene,
-        sanity: newSanity,
-        hp: newHp,
-        tension: newTension,
-        stamina: Math.max(0, prev.stamina - 6),
-        log: [...prev.log, `${s.time} — ${s.loc}`],
-      };
-    });
-  }, []);
-
-  const restart = useCallback(() => {
-    setState(INIT);
-    setScreen('menu');
-  }, []);
-
-  const cause = CAUSES[state.scene % CAUSES.length];
-
   return (
-    <div className={shake && screen === 'play' ? 'animate-shake' : ''}>
-      {screen === 'menu' && <MainMenu onStart={() => setScreen('play')} />}
-      {screen === 'play' && <Gameplay state={state} onChoice={handleChoice} onInventory={() => setScreen('inventory')} />}
-      {screen === 'inventory' && <Inventory state={state} onClose={() => setScreen('play')} />}
-      {screen === 'game-over' && <GameOver cause={cause} onRestart={restart} />}
-      {screen === 'win' && <Win onRestart={restart} />}
-    </div>
+    <>
+      {screen === 'menu' && <MainMenu onStart={() => setScreen('cutscene')} />}
+      {screen === 'cutscene' && <CutsceneScreen onDone={() => setScreen('school')} />}
+      {screen === 'school' && <SchoolScreen onEnd={() => setScreen('end')} />}
+      {screen === 'end' && <EndCard onRestart={() => setScreen('menu')} />}
+    </>
   );
 }
