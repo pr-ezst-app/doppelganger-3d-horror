@@ -80,12 +80,26 @@ function DialogueBox({ lines, onDone }: { lines: DialogueLine[]; onDone: () => v
 }
 
 // ─── CAR INTERIOR 3D ─────────────────────────────────────────────────────────
-function CarInterior() {
+function CarInterior({ lookRef }: { lookRef: React.MutableRefObject<{ yaw: number; pitch: number }> }) {
   const t = useRef(0);
+  const BASE_POS = new THREE.Vector3(0, 1.1, 1.6);
+
   useFrame((state, delta) => {
     t.current += delta * 0.4;
-    state.camera.position.set(Math.sin(t.current * 0.6) * 0.04, 1.1 + Math.sin(t.current * 1.2) * 0.012, 1.6);
-    state.camera.lookAt(0, 0.7, -1.5);
+    // Gentle car sway added on top of mouse look
+    const sway = Math.sin(t.current * 0.6) * 0.04;
+    const bobY = Math.sin(t.current * 1.2) * 0.012;
+    state.camera.position.set(BASE_POS.x + sway, BASE_POS.y + bobY, BASE_POS.z);
+
+    // Mouse-look: pitch clamped so you can look around the car interior
+    const yaw = lookRef.current.yaw;
+    const pitch = THREE.MathUtils.clamp(lookRef.current.pitch, -0.45, 0.35);
+    const lookTarget = new THREE.Vector3(
+      Math.sin(yaw) * 2,
+      0.7 + Math.sin(pitch) * 1.5,
+      -1.5 + Math.cos(yaw) * 0.5,
+    );
+    state.camera.lookAt(lookTarget);
   });
 
   return (
@@ -472,7 +486,7 @@ function SchoolScreen({ onEnd }: { onEnd: () => void }) {
       {/* HUD top */}
       <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2" style={{ background: 'rgba(0,0,0,0.58)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '15px', letterSpacing: '0.18em', color: 'rgba(210,210,210,0.65)' }}>DOPPELGANGER</div>
-        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', color: 'rgba(192,57,43,0.65)', textTransform: 'uppercase' }}>Chapter I · Monday, Sept 9, 2024 · 7:43 AM</div>
+        <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '0.12em', color: 'rgba(192,57,43,0.65)', textTransform: 'uppercase' }}>Morrow, USA · Chapter I · Mon Sept 9 2024 · 7:43 AM</div>
         <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', color: 'rgba(180,180,180,0.28)', letterSpacing: '0.1em' }}>JAXTON WILSON</div>
       </div>
 
@@ -500,10 +514,63 @@ function SchoolScreen({ onEnd }: { onEnd: () => void }) {
 
 // ─── CUTSCENE ─────────────────────────────────────────────────────────────────
 function CutsceneScreen({ onDone }: { onDone: () => void }) {
+  const lookRef = useRef({ yaw: 0, pitch: 0 });
+  const dragging = useRef(false);
+  const lastMouse = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const SENS = 0.004;
+
+    const onMouseDown = (e: MouseEvent) => {
+      dragging.current = true;
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const dx = e.clientX - lastMouse.current.x;
+      const dy = e.clientY - lastMouse.current.y;
+      lastMouse.current = { x: e.clientX, y: e.clientY };
+      lookRef.current.yaw += dx * SENS;
+      lookRef.current.yaw = THREE.MathUtils.clamp(lookRef.current.yaw, -1.1, 1.1);
+      lookRef.current.pitch += dy * SENS;
+    };
+    const onMouseUp = () => { dragging.current = false; };
+
+    // Touch support
+    const onTouchStart = (e: TouchEvent) => {
+      lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const dx = e.touches[0].clientX - lastMouse.current.x;
+      const dy = e.touches[0].clientY - lastMouse.current.y;
+      lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      lookRef.current.yaw += dx * SENS;
+      lookRef.current.yaw = THREE.MathUtils.clamp(lookRef.current.yaw, -1.1, 1.1);
+      lookRef.current.pitch += dy * SENS;
+    };
+
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('touchstart', onTouchStart);
+    window.addEventListener('touchmove', onTouchMove);
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+    };
+  }, []);
+
   return (
-    <div className="w-screen h-screen relative overflow-hidden">
-      <div className="absolute top-3 left-1/2 z-30 -translate-x-1/2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.2em', color: 'rgba(180,180,180,0.3)', textTransform: 'uppercase' }}>
-        Monday · Sept 9 · 7:41 AM · In the car
+    <div className="w-screen h-screen relative overflow-hidden" style={{ cursor: 'grab' }}>
+      <div className="absolute top-3 left-1/2 z-30 -translate-x-1/2" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.2em', color: 'rgba(180,180,180,0.3)', textTransform: 'uppercase', pointerEvents: 'none' }}>
+        Monday · Sept 9 · 7:41 AM · Morrow, USA · In the car
+      </div>
+      {/* Look-around hint */}
+      <div className="absolute top-3 left-4 z-30" style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.1em', color: 'rgba(180,180,180,0.2)', textTransform: 'uppercase', pointerEvents: 'none' }}>
+        drag to look around
       </div>
       <button
         className="absolute top-3 right-4 z-30"
@@ -513,7 +580,7 @@ function CutsceneScreen({ onDone }: { onDone: () => void }) {
         skip →
       </button>
       <Canvas camera={{ fov: 65, position: [0, 1.1, 1.6] }} style={{ background: '#070707' }}>
-        <CarInterior />
+        <CarInterior lookRef={lookRef} />
       </Canvas>
       <DialogueBox lines={CAR_DIALOGUE} onDone={onDone} />
     </div>
@@ -531,7 +598,7 @@ function MainMenu({ onStart }: { onStart: () => void }) {
       <div className="relative z-10 flex flex-col items-center gap-5">
         <div style={{ opacity: vis ? 1 : 0, transition: 'opacity 0.9s, transform 0.9s', transform: vis ? 'none' : 'translateY(10px)' }}>
           <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '10px', letterSpacing: '0.35em', color: 'rgba(192,57,43,0.5)', textTransform: 'uppercase', marginBottom: '12px' }}>
-            2024 &nbsp;·&nbsp; Chapter I
+            Morrow, USA &nbsp;·&nbsp; 2024 &nbsp;·&nbsp; Chapter I
           </div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(52px, 10vw, 108px)', color: '#d8d8d8', letterSpacing: '0.07em', lineHeight: 1 }}>
             DOPPELGANGER
@@ -548,10 +615,10 @@ function MainMenu({ onStart }: { onStart: () => void }) {
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(192,57,43,0.7)'; (e.currentTarget as HTMLElement).style.background = 'rgba(192,57,43,0.07)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
-            START CHAPTER I
+            START GAME
           </button>
           <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: '9px', letterSpacing: '0.15em', color: 'rgba(150,150,150,0.22)', textTransform: 'uppercase' }}>
-            Playing as Jaxton Wilson · 7th Grade
+            Playing as Jaxton Wilson · 7th Grade · Morrow Middle School
           </div>
         </div>
 
